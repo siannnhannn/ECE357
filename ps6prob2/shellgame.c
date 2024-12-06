@@ -45,9 +45,9 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    sem_init(&shared_sems->sem_a, init_pebbles);
-    sem_init(&shared_sems->sem_b, init_pebbles);
-    sem_init(&shared_sems->sem_c, init_pebbles);
+    sem_init(&shared_sems->sem_a, init_pebbles, 10);
+    sem_init(&shared_sems->sem_b, init_pebbles, 20);
+    sem_init(&shared_sems->sem_c, init_pebbles, 30);
 
     setup_signal_handler();
 
