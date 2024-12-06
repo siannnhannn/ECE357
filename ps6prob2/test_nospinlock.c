@@ -3,12 +3,13 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
 //12 cores on laptop
 #define NUM_PROCESSES 12
-#define NUM_ITERATIONS 10
+#define NUM_ITERATIONS 1000000
 
 int main() {
-    int* shared_variable = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, -1, 0);
+    int* shared_variable = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if(shared_variable == MAP_FAILED) {
         perror("Failed to mmap");
         exit(1);
@@ -17,13 +18,15 @@ int main() {
     *shared_variable = 0;
 
     for(int i = 0; i < NUM_PROCESSES; i++) {
-        int pid;
-        if((pid = fork()) == 0) {
+        int pid = fork();
+        if(pid == 0) {
             for(int j = 0; j < NUM_ITERATIONS; j++) {
-                return *shared_variable++;
+                (*shared_variable)++;
+                //fprintf(stderr, "am adding to shared variable: %d\n", *shared_variable);
             }
+            return *shared_variable;
             exit(0);
-        } else {
+        } else if (pid < 0) {
             perror("Failed fork");
             exit(1);
         }

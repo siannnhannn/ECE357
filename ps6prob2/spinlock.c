@@ -1,9 +1,8 @@
+#include "spinlock.h"
 #include "tas.h"
 
-//loop until we can acquire the lock
 void spin_lock(volatile char* lock) {
-    while(tasl(lock)!=0);
-    lock
+    while(tas(lock)!=0);
 }
 
 void spin_unlock(volatile char* lock) {
