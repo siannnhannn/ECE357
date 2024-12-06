@@ -5,7 +5,6 @@
 
 struct sem {
     //initial count
-    int sem_id;
     int sem_count;
     int tasks_waiting_count;
     int tasks_waiting[NUM_TASKS];
@@ -16,7 +15,7 @@ struct sem {
     volatile char *lock;
 };
 
-void sem_init(struct sem *s, int count, int sem_id);
+void sem_init(struct sem *s, int count);
 int sem_try(struct sem *s);
 void sem_wait(struct sem *s, int whichtask);
 void sem_inc(struct sem *s, int whichtask);

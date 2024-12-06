@@ -45,9 +45,9 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    sem_init(&shared_sems->sem_a, init_pebbles, 10);
-    sem_init(&shared_sems->sem_b, init_pebbles, 20);
-    sem_init(&shared_sems->sem_c, init_pebbles, 30);
+    sem_init(&shared_sems->sem_a, init_pebbles);
+    sem_init(&shared_sems->sem_b, init_pebbles);
+    sem_init(&shared_sems->sem_c, init_pebbles);
 
     setup_signal_handler();
 
@@ -55,41 +55,35 @@ int main(int argc, char *argv[]) {
 
     for (int i = 0; i < NUM_TASKS; i++) {
         pids[i] = fork();
-
         if (pids[i] < 0) {
             perror("Failed fork");
             exit(EXIT_FAILURE);
         }
 
         if (pids[i] == 0) {
-            //child process
-
             struct sem *sem_from = NULL;
             struct sem *sem_to = NULL;
 
             switch (i) {
-                case 0: sem_from = &shared_sems->sem_a; sem_to = &shared_sems->sem_b; break;
-                case 1: sem_from = &shared_sems->sem_b; sem_to = &shared_sems->sem_c; break;
-                case 2: sem_from = &shared_sems->sem_c; sem_to = &shared_sems->sem_a; break;
-                case 3: sem_from = &shared_sems->sem_b; sem_to = &shared_sems->sem_a; break;
-                case 4: sem_from = &shared_sems->sem_c; sem_to = &shared_sems->sem_b; break;
-                case 5: sem_from = &shared_sems->sem_a; sem_to = &shared_sems->sem_c; break;
+                case 0: sem_from = &shared_sems->sem_a; sem_to = &shared_sems->sem_b; break; //A->B
+                case 1: sem_from = &shared_sems->sem_b; sem_to = &shared_sems->sem_c; break; //B->C
+                case 2: sem_from = &shared_sems->sem_c; sem_to = &shared_sems->sem_a; break; //C->A
+                case 3: sem_from = &shared_sems->sem_b; sem_to = &shared_sems->sem_a; break; //B->A
+                case 4: sem_from = &shared_sems->sem_c; sem_to = &shared_sems->sem_b; break; //C->B
+                case 5: sem_from = &shared_sems->sem_a; sem_to = &shared_sems->sem_c; break; //A->C
                 default:
                     fprintf(stderr, "Invalid task ID\n");
                     exit(EXIT_FAILURE);
             }
 
             whichtask = i;
-            printf("Child process %d started: task %d, sem_from: %p, sem_to: %p\n", getpid(), whichtask, sem_from, sem_to);
+            printf("VCPU %d (pid %d) started\n", whichtask, getpid());
 
             for (int j = 0; j < init_moves; j++) {
-                printf("Task %d (child %d): iteration %d - waiting on sem_from\n", whichtask, getpid(), j);
                 sem_wait(sem_from, whichtask);
-                printf("Task %d (child %d): iteration %d - incrementing sem_to\n", whichtask, getpid(), j);
                 sem_inc(sem_to, whichtask);
-                sched_yield();
             }
-            printf("Task %d (child %d): completed all iterations\n", whichtask, getpid());
+            printf("VCPU %d (pid %d) completed iterations, signal handler was invoked %d times\n", whichtask, getpid(), sig_count[whichtask]);
             exit(EXIT_SUCCESS);
         }
     }
@@ -98,11 +92,10 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < NUM_TASKS; i++) {
         int status;
         waitpid(pids[i], &status, 0);
-        printf("VCPU %d done\n", i);
         if (WIFEXITED(status)) {
-            printf("Child pid %d exited with status %d\n", pids[i], WEXITSTATUS(status));
+            printf("VCPU (pid %d) exited with status %d\n", pids[i], WEXITSTATUS(status));
         } else if (WIFSIGNALED(status)) {
-            printf("Child pid %d exited due to signal %d\n", pids[i], WTERMSIG(status));
+            printf("VCPU (pid %d) exited due to signal %d\n", pids[i], WTERMSIG(status));
         }
     }
 
@@ -111,16 +104,15 @@ int main(int argc, char *argv[]) {
     print_info("sem_b", &shared_sems->sem_b);
     print_info("sem_c", &shared_sems->sem_c);
 
-    munmap(shared_sems, sizeof(shared));
-    
+    munmap(shared_sems, sizeof(shared));   
     return 0;
 }
 
 void print_info(const char *sem_name, struct sem *sem) {
     fprintf(stderr, "Semaphore: %s\n", sem_name);
     for (int i = 0; i < NUM_TASKS; i++) {
-        fprintf(stderr, "Task %d Sleep Count: %d\n", i, sem->sleep_count[i]);
-        fprintf(stderr, "Task %d Wake Count: %d\n", i, sem->wake_count[i]);
+        fprintf(stderr, "VCPU %d Sleeps: %d\n", i, sem->sleep_count[i]);
+        fprintf(stderr, "VCPU %d Wakes: %d\n", i, sem->wake_count[i]);
     }
 }
 

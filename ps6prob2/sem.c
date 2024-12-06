@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <sys/types.h>
+#include <sched.h>
 #include "sem.h"
 #include "spinlock.h"
 
@@ -17,8 +18,7 @@ bool already_waiting(pid_t pid, struct sem *s) {
     return false;
 }
 
-void sem_init(struct sem *s, int count, int sem_id) {
-    s->sem_id = sem_id;
+void sem_init(struct sem *s, int count) {
     s->sem_count = count;
     s->tasks_waiting_count = 0;
 
@@ -37,67 +37,72 @@ void sem_init(struct sem *s, int count, int sem_id) {
     *(s->lock) = 0;
 }
 
-/*
 // Non-blocking P operation
 int sem_try(struct sem *s) {
     spin_lock(s->lock);
     if (s->sem_count > 0) {
         s->sem_count--;
         spin_unlock(s->lock);
-        return 0; // Success
+        return 0;
     }
     spin_unlock(s->lock);
-    return -1; // Failure
+    return -1;
 }
-*/
 
-//blocking P operation
 void sem_wait(struct sem *s, int whichtask) {
     sigset_t waitmask, oldmask;
-    pid_t pid = getpid();
 
-    //block SIGUSR1 and save the old mask
+    //block SIGUSR1 before adding to tasks_waiting
     sigemptyset(&waitmask);
     sigaddset(&waitmask, SIGUSR1);
-    sigprocmask(SIG_BLOCK, &waitmask, &oldmask);
 
     spin_lock(s->lock);
-    fprintf(stderr, "locked1 %d, sem_count: %d\n", s->sem_id, s->sem_count);
 
-    while (s->sem_count <= 0) {
+    while (1) {
+        if (s->sem_count > 0) {
+            s->sem_count--;
+            spin_unlock(s->lock);
+            return;
+        }
+
+        sigprocmask(SIG_BLOCK, &waitmask, &oldmask);
+
+        pid_t pid = getpid();
         if (s->tasks_waiting_count < NUM_TASKS && !already_waiting(pid, s)) {
             s->tasks_waiting[s->tasks_waiting_count++] = pid;
             s->sleep_count[whichtask]++;
         }
         spin_unlock(s->lock);
-        fprintf(stderr, "unlocked1 %d, sem_count: %d\n", s->sem_id, s->sem_count);
-
-        //wait for wakeup signal
+        //sleep
         sigsuspend(&oldmask);
+
         spin_lock(s->lock);
-        fprintf(stderr, "locked2 %d, sem_count: %d\n", s->sem_id, s->sem_count);
+        sigprocmask(SIG_UNBLOCK, &waitmask, NULL);
+
+        sched_yield();
     }
-
-    s->sem_count--;
-    spin_unlock(s->lock);
-    fprintf(stderr, "unlocked2 %d, sem_count: %d\n", s->sem_id, s->sem_count);
-
-    sigprocmask(SIG_UNBLOCK, &oldmask, NULL);
 }
 
-//V operation
-void sem_inc(struct sem *s, int whichtask) {
+
+void sem_inc(struct sem *s, int whichtask) { 
     spin_lock(s->lock);
     s->sem_count++;
-    fprintf(stderr, "locked3 %d, sem_count: %d\n", s->sem_id, s->sem_count);
 
-    if (s->tasks_waiting_count > 0) {
-        for (int i = 0; i < s->tasks_waiting_count; i++) {
-            kill(s->tasks_waiting[i], SIGUSR1);
-            s->wake_count[whichtask]++;
+    while (s->tasks_waiting_count > 0) {
+        int woken_task = s->tasks_waiting[0];
+        //wake
+        kill(woken_task, SIGUSR1);
+        s->wake_count[whichtask]++;
+        
+        //shift tasks in queue
+        for (int i = 1; i < s->tasks_waiting_count; i++) {
+            s->tasks_waiting[i - 1] = s->tasks_waiting[i];
         }
-        s->tasks_waiting_count = 0;
+        s->tasks_waiting_count--;
     }
 
     spin_unlock(s->lock);
 }
+
+
+
