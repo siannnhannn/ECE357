@@ -9,15 +9,6 @@
 #include "sem.h"
 #include "spinlock.h"
 
-bool already_waiting(pid_t pid, struct sem *s) {
-    for (int i = 0; i < s->tasks_waiting_count; i++) {
-        if (s->tasks_waiting[i] == pid) {
-            return true;
-        }
-    }
-    return false;
-}
-
 void sem_init(struct sem *s, int count) {
     s->sem_count = count;
     s->tasks_waiting_count = 0;
@@ -68,7 +59,7 @@ void sem_wait(struct sem *s, int whichtask) {
         sigprocmask(SIG_BLOCK, &waitmask, &oldmask);
 
         pid_t pid = getpid();
-        if (s->tasks_waiting_count < NUM_TASKS && !already_waiting(pid, s)) {
+        if (s->tasks_waiting_count < NUM_TASKS) {
             s->tasks_waiting[s->tasks_waiting_count++] = pid;
             s->sleep_count[whichtask]++;
         }
@@ -82,7 +73,6 @@ void sem_wait(struct sem *s, int whichtask) {
         sched_yield();
     }
 }
-
 
 void sem_inc(struct sem *s, int whichtask) { 
     spin_lock(s->lock);
